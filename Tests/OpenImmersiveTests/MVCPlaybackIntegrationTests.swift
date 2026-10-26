@@ -44,6 +44,9 @@ struct MVCPlaybackIntegrationTests {
         #expect(player.error == nil)
         #expect(player.paused)
         #expect(abs(player.currentTime - 0.15) < 0.01)
+        player.seek(to: 0.2)
+        player.seek(to: 0.05)
+        player.seek(to: 0.15)
         player.swapEyes()
         player.selectEmbeddedAudioTrack(id: 1)
         #expect(player.eyesSwapped)
@@ -80,4 +83,23 @@ struct MVCPlaybackIntegrationTests {
         #expect(player.error?.localizedDescription.contains("MVC stereo is unavailable") == true)
         #expect(player.mvcDiagnostics?.stereoConfirmed == false)
     }
+    @Test func interruptionDoesNotOverrideAnExplicitPause() async throws {
+        let player = VideoPlayer()
+        defer { player.stop() }
+        player.openItem(try movie())
+        try await waitUntil { !player.loading || player.error != nil }
+        player.play()
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: nil,
+            userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(player.paused)
+        player.pause()
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: nil,
+            userInfo: [AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
+                       AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue])
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(player.paused)
+        #expect(player.error == nil)
+    }
+
 }

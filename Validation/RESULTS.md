@@ -6,13 +6,25 @@ Apple Silicon Mac, visionOS 27 simulator. Run dates: October 26, 2026.
 - Host core suite: 16 tests pass, covering both-eye reference hashes at
   1/2/4/6/8 workers, B-frame timestamps, seeks/audio trimming, stereo rejection,
   channel layouts, sample-clock timing, bounded HTTP reads and cancellation.
-- Simulator suite: 11 controller/integration tests pass. Includes legacy Codable
+- Simulator suite: 13 controller/integration tests pass. Includes legacy Codable
   values with metadata, engine routing, early play/pause, scrub/skip/volume,
   embedded track IDs, swap, EOF callback routing, stale callbacks, real paired
-  MVC output and six-channel PCM, and ordinary MKV rejection.
+  MVC output and six-channel PCM, rapid seeks, explicit pause during interruptions,
+  SBS/over-under/AIV routing, and ordinary MKV rejection.
 - Full app Release simulator and device builds succeed using the local library integration.
 - Upstream edge264-mvc `make check` passes: 151/151 conformance fixtures in
   the tested threaded/paced variants, plus API, liveness, stress and robustness.
+
+- Clean remote checkout: SwiftPM downloads the immutable, checksum-pinned native
+  asset and both device/simulator builds pass without local Artifacts or Vendor.
+- Full app in simulator with an attached RealityView: both local and extensionless
+  HTTP fixture playback reach EOF and replay. Each pass submits all nine stereo
+  pairs with six-channel PCM, zero late drops/rebuffers and no renderer errors.
+  HTTP reports are in Reports/simulator-http-run-{1,2}.json (counters are cumulative
+  after replay). A temporary app copy supplied the test URL/fixture and collected
+  diagnostics; those test hooks are not part of the app PR.
+- Signed device app build passes. Physical installation is blocked by the paired
+  M5 headset being locked; no integrated-player hardware result is claimed.
 
 The simulator's test runner has no compositor surface; the real-decoder test checks
 sample production rather than claiming paced EOF or physical presentation.

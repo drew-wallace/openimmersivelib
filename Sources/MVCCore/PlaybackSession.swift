@@ -48,7 +48,11 @@ import CoreMedia
             Task { @MainActor in
                 guard let self, let raw = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
                       let type = AVAudioSession.InterruptionType(rawValue: raw) else { return }
-                if type == .began { self.restoreAfterInterruption = self.wantsPlayback; self.pause() }
+                if type == .began {
+                    let resume = self.wantsPlayback
+                    self.pause()
+                    self.restoreAfterInterruption = resume
+                }
                 else if self.restoreAfterInterruption,
                         let flags = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt,
                         AVAudioSession.InterruptionOptions(rawValue: flags).contains(.shouldResume) { self.play() }
@@ -57,7 +61,7 @@ import CoreMedia
         observers.append(center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in
                 guard let self, self.media != nil else { return }
-                self.seek(to: self.position)
+                self.seek(to: self.synchronizer.currentTime().seconds)
             }
         })
         #endif
@@ -94,6 +98,7 @@ import CoreMedia
         onUpdate?()
     }
     public func play() {
+        restoreAfterInterruption = false
         guard state != .idle, state != .failed else { return }
         wantsPlayback = true
         guard media != nil else { onUpdate?(); return }
@@ -104,6 +109,7 @@ import CoreMedia
         wantsPlayback = true; state = .buffering; onUpdate?()
     }
     public func pause() {
+        restoreAfterInterruption = false
         wantsPlayback = false; synchronizer.rate = 0
         if media != nil { position = max(0, synchronizer.currentTime().seconds); state = .paused }
         onUpdate?()
@@ -134,9 +140,9 @@ import CoreMedia
     }
     public func selectAudio(_ id: Int) {
         guard media?.audioTracks.contains(where: { $0.id == id }) == true else { return }
-        selectedAudio = id; seek(to: position)
+        selectedAudio = id; seek(to: synchronizer.currentTime().seconds)
     }
-    public func swapEyes() { eyesSwapped.toggle(); seek(to: position) }
+    public func swapEyes() { eyesSwapped.toggle(); seek(to: synchronizer.currentTime().seconds) }
     public func startTestSignal(channels: Int) {
         guard channels == 6 || channels == 8 else { return }
         stop(); error = nil; position = 0; presentCount = 0; droppedCount = 0; bufferCount = 0

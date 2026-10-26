@@ -186,4 +186,21 @@ struct MVCControllerTests {
         #expect(player.player.currentItem != nil)
         #expect(player.renderer == nil)
     }
+    @Test func framePackedAndAIVItemsKeepTheirExistingRenderingPaths() {
+        let player = VideoPlayer(makeMVC: { Issue.record("Existing formats must not open MVC"); return FakeMVC() })
+        defer { player.stop() }
+        for packing: VideoItem.FramePacking in [.sideBySide, .overUnder] {
+            player.openItem(VideoItem(metadata: [:], url: URL(fileURLWithPath: "/tmp/packed.mov"),
+                                      projection: .equirectangular(fieldOfView: 180), framePacking: packing))
+            #expect(!player.isMVC)
+            #expect(player.player.currentItem != nil)
+            #expect(player.renderer != nil)
+            #expect(player.framePacking == packing)
+        }
+        player.openItem(VideoItem(metadata: [:], url: URL(fileURLWithPath: "/tmp/immersive.aivu"), projection: .appleImmersive))
+        #expect(!player.isMVC)
+        #expect(player.renderer == nil)
+        #expect(player.projection == .appleImmersive)
+    }
+
 }
