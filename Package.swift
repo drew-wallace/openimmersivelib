@@ -6,7 +6,9 @@ let package = Package(
     platforms: [.visionOS(.v26)],
     products: [.library(name: "OpenImmersiveLib", targets: ["OpenImmersive"])],
     targets: [
-        .binaryTarget(name: "CMVC", path: "Artifacts/CMVC.xcframework"),
+        .binaryTarget(name: "CMVC",
+            url: "https://github.com/drew-wallace/openimmersivelib/releases/download/mvc-native-2026.10.26.1/CMVC.xcframework.zip",
+            checksum: "30fa951eab2cf29e1535b436f2c2b8b15fbe6f1858d87fac66dc0ce89f17ce66"),
         .target(name: "MVCCore", dependencies: ["CMVC"], path: "Sources/MVCCore",
                 swiftSettings: [.swiftLanguageMode(.v5)],
                 linkerSettings: [.linkedLibrary("z"), .linkedLibrary("iconv")]),
