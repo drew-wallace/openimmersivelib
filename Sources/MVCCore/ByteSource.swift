@@ -42,4 +42,3 @@ final class LocalByteSource: ByteSource {
         return result
     }
 }
-

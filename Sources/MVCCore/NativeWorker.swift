@@ -197,4 +197,3 @@ final class NativeWorker: @unchecked Sendable {
         } catch { callbackError = error.localizedDescription; return false }
     }
 }
-
