@@ -154,6 +154,9 @@ public struct ImmersivePlayer: View {
             videoPlayer.play()
             videoScreen.update(source: videoPlayer)
         }
+        .onChange(of: videoPlayer.renderer) { _, _ in
+            videoScreen.update(source: videoPlayer)
+        }
         .onDisappear {
             videoPlayer.stop()
             videoPlayer.hideControlPanel()

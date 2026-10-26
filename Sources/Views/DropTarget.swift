@@ -57,13 +57,14 @@ public struct DropTarget<Content: View>: View {
             }
             
             let isAivuFile = video.url.lastPathComponent.hasSuffix(".aivu")
+            let isMVC = ["mkv", "mk3d"].contains(video.url.pathExtension.lowercased())
             let item = VideoItem(
                 metadata: [
                     .commonIdentifierTitle: video.url.lastPathComponent,
                     .commonIdentifierDescription: "From dropped video",
                 ],
                 url: video.url,
-                projection: isAivuFile ? .appleImmersive : nil
+                projection: isAivuFile ? .appleImmersive : (isMVC ? .rectangular : nil)
             )
             loadItemAction(item)
             return true

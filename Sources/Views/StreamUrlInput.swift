@@ -10,6 +10,7 @@ import SwiftUI
 /// A button revealing a sheet with a `TextField` and a clipboard paste button for manual input of HLS stream URLs.
 public struct StreamUrlInput: View {
     /// The visibility of the sheet.
+    @State private var mvcFormat = false
     @State private var isSheetShowing: Bool = false
     /// The current value of the text field.
     @State private var textfieldRawVal: String = ""
@@ -50,7 +51,7 @@ public struct StreamUrlInput: View {
                     }
                     .buttonBorderShape(.circle)
                     
-                    Text("Enter or paste a HLS stream URL (.m3u/.m3u8)")
+                    Text("Enter a stream or MVC MKV URL")
                         .font(.headline)
                         .padding()
                     
@@ -78,6 +79,9 @@ public struct StreamUrlInput: View {
                 }
                 .padding()
                 
+                Toggle("MVC MKV (also for URLs without a file extension)", isOn: $mvcFormat)
+                    .padding(.horizontal)
+
                 HStack {
                     Button("Load Stream", systemImage: "play.rectangle.fill") {
                         loadStream()
@@ -105,7 +109,8 @@ public struct StreamUrlInput: View {
     /// then checks that the resulting object has a host, which implicitly checks for scheme, domain, and basic syntax.
     private func validateUrl() -> URL? {
         guard let url = URL(string: textfieldVal),
-              url.host() != nil else {
+              url.host() != nil,
+              ["http", "https"].contains(url.scheme?.lowercased() ?? "") else {
             return nil
         }
         
@@ -118,12 +123,15 @@ public struct StreamUrlInput: View {
             return
         }
         
+        let isMVC = mvcFormat || ["mkv", "mk3d"].contains(url.pathExtension.lowercased())
         let item = VideoItem(
             metadata: [
-                .commonIdentifierTitle: "HLS Stream",
+                .commonIdentifierTitle: isMVC ? url.lastPathComponent : "Stream",
                 .commonIdentifierDescription: url.absoluteString,
             ],
-            url: url
+            url: url,
+            projection: isMVC ? .rectangular : nil,
+            playbackEngine: mvcFormat ? .mvc : .automatic
         )
         
         loadItemAction(item)

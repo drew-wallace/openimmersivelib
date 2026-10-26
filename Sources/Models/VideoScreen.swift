@@ -96,7 +96,8 @@ public extension VideoPlayer {
             component = VideoPlayerComponent(avPlayer: player)
         }
         component.desiredViewingMode = .stereo
-        component.desiredImmersiveViewingMode = .full
+        if isMVC { component.desiredSpatialVideoMode = .screen }
+        else { component.desiredImmersiveViewingMode = .full }
         return component
     }
 }

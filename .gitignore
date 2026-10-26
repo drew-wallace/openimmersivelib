@@ -1,8 +1,11 @@
+.build/
+Artifacts/
+Vendor/
+DerivedData*/
 .DS_Store
-/.build
-/Packages
+*.xcuserstate
 xcuserdata/
-DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
-.netrc
+reports/
+*.mkv
+*.mk3d
+.swiftpm/

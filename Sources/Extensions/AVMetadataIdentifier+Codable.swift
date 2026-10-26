@@ -7,15 +7,14 @@
 
 import AVFoundation
 
-/// Codable extension of AVMetadataIdentifier so it can be used in VideoItem
-extension AVMetadataIdentifier: Codable {
-    public typealias RawValue = String
-
-    public var rawValue: String {
-        return self.rawValue
+/// Preserve the string representation used by previously serialized VideoItems.
+extension AVMetadataIdentifier: @retroactive Codable {
+    public init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
     }
 
-    init?(value: String) {
-        self.init(rawValue: value)
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
     }
 }
