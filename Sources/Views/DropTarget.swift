@@ -56,15 +56,7 @@ public struct DropTarget<Content: View>: View {
                 return false
             }
             
-            let isAivuFile = video.url.lastPathComponent.hasSuffix(".aivu")
-            let item = VideoItem(
-                metadata: [
-                    .commonIdentifierTitle: video.url.lastPathComponent,
-                    .commonIdentifierDescription: "From dropped video",
-                ],
-                url: video.url,
-                projection: isAivuFile ? .appleImmersive : nil
-            )
+            let item = VideoItem.selectedFile(video.url, description: "From dropped video")
             loadItemAction(item)
             return true
         } isTargeted: { val in withAnimation { isTargeted = val } }

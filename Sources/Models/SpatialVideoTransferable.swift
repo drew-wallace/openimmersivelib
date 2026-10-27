@@ -30,6 +30,19 @@ public struct SpatialVideo: Transferable {
             let (status, url): (Status, URL) = copyFile(received.file)
             return Self.init(status: status, url: url)
         }
+        FileRepresentation(contentType: UTType(filenameExtension: "mkv") ?? .data) { file in
+            SentTransferredFile(file.url)
+        } importing: { received in
+            let (status, url) = copyFile(received.file)
+            return Self.init(status: status, url: url)
+        }
+        FileRepresentation(contentType: UTType(filenameExtension: "mk3d") ?? .data) { file in
+            SentTransferredFile(file.url)
+        } importing: { received in
+            let (status, url) = copyFile(received.file)
+            return Self.init(status: status, url: url)
+        }
+
     }
     
     private static func copyFile(_ file: URL) -> (Status, URL) {
