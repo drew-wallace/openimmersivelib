@@ -140,11 +140,18 @@ public class VideoPlayer: Sendable {
     private var dismissControlPanelTask: Task<Void, Never>?
     private var playlistReader: PlaylistReader?
     private var delegate: PlaylistLoaderDelegate?
+    @ObservationIgnored private let acquireFileAccess: (URL) -> SecurityScopedResource?
+    private var fileAccess: SecurityScopedResource?
     private var itemGeneration = UUID()
     
     //MARK: Public methods
     /// Public initializer for visibility.
-    public init() { configureAudio() }
+    public convenience init() { self.init(acquireFileAccess: { SecurityScopedResource($0) }) }
+
+    init(acquireFileAccess: @escaping (URL) -> SecurityScopedResource?) {
+        self.acquireFileAccess = acquireFileAccess
+        configureAudio()
+    }
 
     isolated deinit { stop() }
 
@@ -210,6 +217,7 @@ public class VideoPlayer: Sendable {
         
         let generation = itemGeneration
         url = item.url
+        if item.url.isFileURL { fileAccess = acquireFileAccess(item.url) }
         title = item.metadata[.commonIdentifierTitle] ?? ""
         description = item.metadata[.commonIdentifierDescription] ?? ""
         metadata = item.metadata
@@ -457,6 +465,7 @@ public class VideoPlayer: Sendable {
         tearDownObservers()
         tearDownInjector()
         player.replaceCurrentItem(with: nil)
+        fileAccess = nil
         title = ""
         description = ""
         duration = 0

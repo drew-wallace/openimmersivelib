@@ -33,10 +33,7 @@ public struct FilePicker: View {
         ) { result in
             switch result {
             case .success(let url):
-                // Hack: this should be mirrored by url.stopAccessingSecurityScopedResource(),
-                // but it would prevent playing the same file twice.
-                url.startAccessingSecurityScopedResource()
-                
+                // The player owns access for the playback lifetime.
                 let isAivuFile = url.lastPathComponent.hasSuffix(".aivu")
                 let item = VideoItem(
                     metadata: [
