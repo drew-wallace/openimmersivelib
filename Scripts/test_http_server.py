@@ -28,7 +28,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(b'x')
                 return
-            self.send_response(206)
+            self.send_response(200 if self.path == "/unranged-matroska" else 206)
             self.send_header('Content-Range', f'bytes {response_begin}-{end}/{SIZE}')
             self.send_header('Content-Length', str(end - begin + 1))
             self.send_header('Connection', 'close')
@@ -38,7 +38,7 @@ class Handler(BaseHTTPRequestHandler):
                 count = min(65536, end - position + 1)
                 start = position % 251
                 data = bytearray((PATTERN * ((start + count + 250)//251))[start:start+count])
-                if self.path == '/matroska' and position == 0:
+                if self.path in ['/matroska', '/unranged-matroska'] and position == 0:
                     data[:min(4, count)] = bytes.fromhex('1a45dfa3')[:min(4, count)]
                 self.wfile.write(data)
                 position += count

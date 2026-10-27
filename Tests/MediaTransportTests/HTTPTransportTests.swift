@@ -82,6 +82,13 @@ final class HTTPTransportTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(began), 1)
     }
 
+    func testProbeBoundsUnrangedResponsesButPlaybackStillRequiresRanges() async throws {
+        let url = URL(string: "http://127.0.0.1:\(port)/unranged-matroska")!
+        let detected = try await HTTPByteSource.isMatroska(url)
+        XCTAssertTrue(detected)
+        XCTAssertThrowsError(try HTTPByteSource(url))
+    }
+
 }
 
 #endif

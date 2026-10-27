@@ -21,8 +21,9 @@ private final class RangeRequest: NSObject, URLSessionDataDelegate, @unchecked S
     private var session: URLSession!
     private var task: URLSessionDataTask!
     private let first: Int64, last: Int64
-    init(url: URL, first: Int64, last: Int64) {
-        self.first = first; self.last = last
+    private let containerProbe: Bool
+    init(url: URL, first: Int64, last: Int64, containerProbe: Bool = false) {
+        self.first = first; self.last = last; self.containerProbe = containerProbe
         super.init()
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15; configuration.timeoutIntervalForResource = 20
@@ -57,6 +58,11 @@ private final class RangeRequest: NSObject, URLSessionDataDelegate, @unchecked S
     }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
                     completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
+        if containerProbe, let response = response as? HTTPURLResponse, response.statusCode == 200 {
+            total = max(0, response.expectedContentLength)
+            completionHandler(.allow)
+            return
+        }
         guard let response = response as? HTTPURLResponse, response.statusCode == 206,
               let value = response.value(forHTTPHeaderField: "Content-Range"), let range = HTTPContentRange(value),
               range.first == first, range.last == min(last, range.total - 1), range.last - range.first < 4 * 1024 * 1024 else {
@@ -67,6 +73,16 @@ private final class RangeRequest: NSObject, URLSessionDataDelegate, @unchecked S
         completionHandler(.allow)
     }
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive bytes: Data) {
+        if containerProbe {
+            data.append(bytes.prefix(max(0, Int(last - first + 1) - data.count)))
+            if data.count == last - first + 1 {
+                condition.lock()
+                if result == nil { result = .success((data, total)) }
+                condition.broadcast(); condition.unlock()
+                dataTask.cancel()
+            }
+            return
+        }
         guard data.count + bytes.count <= last - first + 1 else { fail("HTTP range response exceeded its requested size"); dataTask.cancel(); return }
         data.append(bytes)
     }
@@ -110,7 +126,7 @@ public final class HTTPByteSource: ByteSource, @unchecked Sendable {
     /// Read only the container signature, without fetching a movie-sized block.
     /// Servers without range support can still be handled by another playback engine.
     public static func isMatroska(_ url: URL) async throws -> Bool {
-        let request = RangeRequest(url: url, first: 0, last: 3)
+        let request = RangeRequest(url: url, first: 0, last: 3, containerProbe: true)
         return try await withTaskCancellationHandler(operation: {
             try await withCheckedThrowingContinuation { continuation in
                 DispatchQueue.global(qos: .userInitiated).async {
