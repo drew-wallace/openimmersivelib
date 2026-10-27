@@ -8,20 +8,23 @@
 import SwiftUI
 import AVFoundation
 import RealityKit
+import MVCCore
 
 /// Video Player Controller interfacing the underlying `AVPlayer`, exposing states and controls to the UI.
 @Observable
 public class VideoPlayer: Sendable {
     //MARK: Video Player and Video Renderer
-    /// The underlying AVFoundation player.
+    /// AVFoundation player. For MVC, use this controller’s controls and timing instead.
     public let player = AVPlayer()
     /// The APMP tag injector used in video streams that are frame-packed side by side or over under.
     private var injector: APMPInjector?
     /// The video renderer to use for media that are frame-packed side by side or over under.
     public var renderer: AVSampleBufferVideoRenderer? {
-        injector?.renderer
+        mvc?.videoRenderer ?? injector?.renderer
     }
     
+    public var isMVC: Bool { mvc != nil }
+
     //MARK: Variables accessible to the UI
     /// The title of the current video (empty string if none).
     private(set) public var title: String = ""
@@ -86,9 +89,10 @@ public class VideoPlayer: Sendable {
     }
     /// The current volume of the underlying `AVPlayer`.
     public var volume: Float {
-        get { player.volume }
+        get { mvc?.volume ?? player.volume }
         set {
             player.volume = min(1, max(0, newValue))
+            mvc?.volume = player.volume
             restartControlPanelTask()
         }
     }
@@ -114,6 +118,14 @@ public class VideoPlayer: Sendable {
           case .scrubStarted:
               cancelControlPanelTask()
           case .scrubEnded:
+              if openingTask != nil { seekDuringPreparation = max(0, currentTime); self.scrubState = .notScrubbing; return }
+              if let mvc {
+                  mvc.seek(to: currentTime)
+                  self.scrubState = .notScrubbing
+                  hasReachedEnd = false
+                  restartControlPanelTask()
+                  return
+              }
               renderer?.flush()
               let seekTime = CMTime(seconds: currentTime, preferredTimescale: 1000)
               let generation = itemGeneration
@@ -140,16 +152,26 @@ public class VideoPlayer: Sendable {
     private var dismissControlPanelTask: Task<Void, Never>?
     private var playlistReader: PlaylistReader?
     private var delegate: PlaylistLoaderDelegate?
-    @ObservationIgnored private let acquireFileAccess: (URL) -> SecurityScopedResource?
-    private var fileAccess: SecurityScopedResource?
+    private var mvc: (any MVCPlaybackControlling)?
+    @ObservationIgnored private let makeMVC: () -> any MVCPlaybackControlling
     private var itemGeneration = UUID()
-    
+    @ObservationIgnored private let acquireFileAccess: (URL) -> SecurityScopedResource?
+    @ObservationIgnored private let prepareItem: (VideoItem) async -> VideoItem
+    private var fileAccess: SecurityScopedResource?
+    private var openingTask: Task<Void, Never>?
+    private var playbackRequestedDuringPreparation = false
+    private var seekDuringPreparation: Double?
+
     //MARK: Public methods
     /// Public initializer for visibility.
-    public convenience init() { self.init(acquireFileAccess: { SecurityScopedResource($0) }) }
+    public convenience init() { self.init(makeMVC: { MVCPlaybackAdapter() }) }
 
-    init(acquireFileAccess: @escaping (URL) -> SecurityScopedResource?) {
+    init(makeMVC: @escaping () -> any MVCPlaybackControlling = { MVCPlaybackAdapter() },
+         acquireFileAccess: @escaping (URL) -> SecurityScopedResource? = { SecurityScopedResource($0) },
+         prepareItem: @escaping (VideoItem) async -> VideoItem = { await $0.preparedForPlayback() }) {
+        self.makeMVC = makeMVC
         self.acquireFileAccess = acquireFileAccess
+        self.prepareItem = prepareItem
         configureAudio()
     }
 
@@ -200,6 +222,7 @@ public class VideoPlayer: Sendable {
             // to reduce the audio's dynamic range to help normalize audio levels.
             let session = AVAudioSession.sharedInstance()
             try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormVideo)
+            try session.setSupportsMultichannelContent(true)
             try session.setIntendedSpatialExperience(
                 .headTracked(soundStageSize: .automatic, anchoringStrategy: .automatic)
             )
@@ -216,14 +239,40 @@ public class VideoPlayer: Sendable {
         stop()
         
         let generation = itemGeneration
+        if item.needsContainerProbe {
+            url = item.url
+            title = item.metadata[.commonIdentifierTitle] ?? ""
+            metadata = item.metadata
+            loading = true
+            let prepare = prepareItem
+            openingTask = Task { [weak self] in
+                let prepared = await prepare(item)
+                guard !Task.isCancelled, let self, self.itemGeneration == generation else { return }
+                self.openingTask = nil
+                self.openPreparedItem(prepared, generation: generation)
+                if let time = self.seekDuringPreparation { self.seekDuringPreparation = nil; self.seek(to: time) }
+                if self.playbackRequestedDuringPreparation { self.play() }
+            }
+        } else {
+            openPreparedItem(item, generation: generation)
+        }
+    }
+
+    private func openPreparedItem(_ item: VideoItem, generation: UUID) {
+        loading = false
         url = item.url
         if item.url.isFileURL { fileAccess = acquireFileAccess(item.url) }
         title = item.metadata[.commonIdentifierTitle] ?? ""
         description = item.metadata[.commonIdentifierDescription] ?? ""
         metadata = item.metadata
-        projection = item.projection ?? .equirectangular(fieldOfView: 180)
+        projection = item.projection ?? (item.usesMVC ? .rectangular : .equirectangular(fieldOfView: 180))
         framePacking = item.framePacking
         
+        if item.usesMVC {
+            openMVC(item, generation: generation)
+            return
+        }
+
         guard let playerItem = makePlayerItem(item.url) else {
             return
         }
@@ -347,7 +396,7 @@ public class VideoPlayer: Sendable {
     /// - Parameters:
     ///   - index: the index of the bitrate rung, -1 for adaptive bitrate (default)
     public func selectBitrateRung(index: Int = -1) {
-        guard index >= -1, index < bitrateLadder.count,
+        guard mvc == nil, index >= -1, index < bitrateLadder.count,
               index != selectedBitrateRungIndex
         else {
             return
@@ -361,7 +410,7 @@ public class VideoPlayer: Sendable {
     /// - Parameters:
     ///   - index: the index of the audio option, -1 for default.
     public func openAudioOption(index: Int = -1) {
-        guard index >= -1, index < audioOptions.count,
+        guard mvc == nil, index >= -1, index < audioOptions.count,
               index != selectedAudioIndex
         else {
             return
@@ -375,7 +424,15 @@ public class VideoPlayer: Sendable {
     ///
     /// If playback has reached the end of the video (`hasReachedEnd` is true), play from the beginning.
     public func play() {
+        if openingTask != nil { playbackRequestedDuringPreparation = true; paused = false; return }
         guard error == nil else { return }
+        if let mvc {
+            do { try AVAudioSession.sharedInstance().setActive(true) }
+            catch { self.error = error; return }
+            mvc.play()
+            restartControlPanelTask()
+            return
+        }
         if hasReachedEnd {
             renderer?.flush()
             let generation = itemGeneration
@@ -394,6 +451,8 @@ public class VideoPlayer: Sendable {
     
     /// Pause media playback.
     public func pause() {
+        playbackRequestedDuringPreparation = false
+        if let mvc { mvc.pause(); restartControlPanelTask(); return }
         player.pause()
         paused = true
         restartControlPanelTask()
@@ -410,6 +469,13 @@ public class VideoPlayer: Sendable {
                      toleranceBefore: CMTime = CMTime.positiveInfinity,
                      toleranceAfter: CMTime = CMTime.positiveInfinity) {
         guard time.seconds.isFinite else { return }
+        if openingTask != nil { seekDuringPreparation = max(0, time.seconds); return }
+        if let mvc {
+            mvc.seek(to: time.seconds)
+            hasReachedEnd = false
+            restartControlPanelTask()
+            return
+        }
         renderer?.flush()
         hasReachedEnd = false
         let generation = itemGeneration
@@ -442,6 +508,7 @@ public class VideoPlayer: Sendable {
     
     /// Jump back 15 seconds in media playback.
     public func minus15() {
+        if mvc != nil { seek(to: currentTime - 15); return }
         guard let time = player.currentItem?.currentTime() else {
             return
         }
@@ -451,6 +518,7 @@ public class VideoPlayer: Sendable {
     
     /// Jump forward 15 seconds in media playback.
     public func plus15() {
+        if mvc != nil { seek(to: currentTime + 15); return }
         guard let time = player.currentItem?.currentTime() else {
             return
         }
@@ -461,11 +529,16 @@ public class VideoPlayer: Sendable {
     /// Stop media playback and unload the current media.
     public func stop() {
         itemGeneration = UUID()
+        openingTask?.cancel(); openingTask = nil
+        playbackRequestedDuringPreparation = false
+        seekDuringPreparation = nil
+        mvc?.onUpdate = nil
+        mvc?.stop()
+        mvc = nil
         cancelControlPanelTask()
         tearDownObservers()
         tearDownInjector()
         player.replaceCurrentItem(with: nil)
-        fileAccess = nil
         title = ""
         description = ""
         duration = 0
@@ -476,6 +549,39 @@ public class VideoPlayer: Sendable {
         bitrateLadder = []; audioOptions = []; selectedAudioIndex = -1; selectedBitrateRungIndex = -1
         aspectRatio = nil; playlistReader = nil; delegate = nil
         shouldShowPlaybackOptions = false
+        fileAccess = nil
+    }
+
+    private func openMVC(_ item: VideoItem, generation: UUID) {
+        guard projection == .rectangular, framePacking == .none else {
+            error = MVCFailure("MVC playback requires rectangular projection and no frame packing.")
+            return
+        }
+        guard item.url.isFileURL || ["http", "https"].contains(item.url.scheme?.lowercased() ?? "") else {
+            error = MVCFailure("MVC playback requires a local file or a seekable HTTP(S) URL.")
+            return
+        }
+        let backend = makeMVC()
+        mvc = backend
+        backend.volume = player.volume
+        backend.onUpdate = { [weak self, weak backend] in
+            guard let self, let backend, self.itemGeneration == generation else { return }
+            self.updateMVC(backend)
+        }
+        backend.open(item.url.isFileURL ? .local(item.url) : .http(item.url))
+        updateMVC(backend)
+    }
+
+    private func updateMVC(_ backend: any MVCPlaybackControlling) {
+        let endedBefore = hasReachedEnd
+        loading = backend.state == .opening
+        buffering = backend.state == .buffering || backend.state == .seeking
+        paused = !backend.playbackRequested
+        hasReachedEnd = backend.state == .ended
+        error = backend.error.map { MVCFailure($0) }
+        duration = backend.media?.duration ?? 0
+        if case .notScrubbing = scrubState { currentTime = backend.position }
+        if hasReachedEnd && !endedBefore { onPlayReachedEnd() }
     }
 
     //MARK: Private methods

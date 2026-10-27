@@ -18,6 +18,7 @@ let package = Package(
         // Targets can depend on other targets in this package and products from dependencies.
         .target(
             name: "OpenImmersive",
+            dependencies: ["MVCCore", "MediaTransport"],
             path: "Sources", exclude: ["MediaTransport", "MVCCore", "CMVC"],
             resources: [.copy("Notices")],
             swiftSettings: [
@@ -35,7 +36,8 @@ let package = Package(
                 swiftSettings: [.swiftLanguageMode(.v5)]),
         .testTarget(name: "MediaTransportTests", dependencies: ["MediaTransport"],
                     swiftSettings: [.swiftLanguageMode(.v5)]),
-        .testTarget(name: "OpenImmersiveTests", dependencies: ["OpenImmersive"],
+        .testTarget(name: "OpenImmersiveTests", dependencies: ["OpenImmersive", "MVCCore"],
+                    resources: [.copy("Fixtures")],
                     swiftSettings: [.swiftLanguageMode(.v6), .defaultIsolation(MainActor.self)]),
     ]
 )
