@@ -13,7 +13,7 @@ import RealityKit
 @Observable
 public class VideoPlayer: Sendable {
     //MARK: Video Player and Video Renderer
-    /// The video player.
+    /// The underlying AVFoundation player.
     public let player = AVPlayer()
     /// The APMP tag injector used in video streams that are frame-packed side by side or over under.
     private var injector: APMPInjector?
@@ -88,7 +88,7 @@ public class VideoPlayer: Sendable {
     public var volume: Float {
         get { player.volume }
         set {
-            player.volume = newValue
+            player.volume = min(1, max(0, newValue))
             restartControlPanelTask()
         }
     }
@@ -116,13 +116,14 @@ public class VideoPlayer: Sendable {
           case .scrubEnded:
               renderer?.flush()
               let seekTime = CMTime(seconds: currentTime, preferredTimescale: 1000)
+              let generation = itemGeneration
               player.seek(to: seekTime) { [weak self] finished in
-                  guard finished else {
-                      return
+                  Task { @MainActor in
+                      guard let self, finished, self.itemGeneration == generation else { return }
+                      self.renderer?.flush()
+                      self.scrubState = .notScrubbing
+                      self.restartControlPanelTask()
                   }
-                  self?.renderer?.flush()
-                  self?.scrubState = .notScrubbing
-                  self?.restartControlPanelTask()
               }
               hasReachedEnd = false
           }
@@ -139,13 +140,14 @@ public class VideoPlayer: Sendable {
     private var dismissControlPanelTask: Task<Void, Never>?
     private var playlistReader: PlaylistReader?
     private var delegate: PlaylistLoaderDelegate?
+    private var itemGeneration = UUID()
     
     //MARK: Public methods
     /// Public initializer for visibility.
-    public init() {
-        configureAudio()
-    }
-    
+    public init() { configureAudio() }
+
+    isolated deinit { stop() }
+
     /// Instruct the UI to reveal the control panel.
     public func showControlPanel() {
         shouldShowPlaybackOptions = false
@@ -176,7 +178,7 @@ public class VideoPlayer: Sendable {
     ///
     /// This will only do something if resolution or audio options are available.
     public func togglePlaybackOptions() {
-        if bitrateLadder.count > 1 || audioOptions.count > 1 {
+        if canChooseResolution || canChooseAudio {
             withAnimation {
                 shouldShowPlaybackOptions.toggle()
             }
@@ -206,6 +208,7 @@ public class VideoPlayer: Sendable {
         // Clean up the AVPlayer first, avoid bad states
         stop()
         
+        let generation = itemGeneration
         url = item.url
         title = item.metadata[.commonIdentifierTitle] ?? ""
         description = item.metadata[.commonIdentifierDescription] ?? ""
@@ -230,11 +233,13 @@ public class VideoPlayer: Sendable {
             // Detect resolution and field of view, if available
             Task { [weak self] in
                 guard let self,
+                      self.itemGeneration == generation,
                       let asset = playerItem.asset as? AVURLAsset,
                       let (resolution, horizontalFieldOfView) =
                         await VideoTools.getVideoDimensions(asset: asset) else {
                     return
                 }
+                guard self.itemGeneration == generation else { return }
                 self.aspectRatio = Float(resolution.width / resolution.height)
                 if !forceFov, let horizontalFieldOfView {
                     self.horizontalFieldOfView = max(0, min(360, horizontalFieldOfView))
@@ -248,7 +253,8 @@ public class VideoPlayer: Sendable {
         selectedBitrateRungIndex = -1
         selectedAudioIndex = -1
         if item.url.host() != nil {
-            playlistReader = PlaylistReader(url: item.url) { reader in
+            playlistReader = PlaylistReader(url: item.url) { [weak self] reader in
+                guard let self, self.itemGeneration == generation else { return }
                 if case .success = reader.state {
                     if reader.bitrateLadder.count > 0 {
                         self.bitrateLadder = reader.bitrateLadder
@@ -333,7 +339,7 @@ public class VideoPlayer: Sendable {
     /// - Parameters:
     ///   - index: the index of the bitrate rung, -1 for adaptive bitrate (default)
     public func selectBitrateRung(index: Int = -1) {
-        guard index < bitrateLadder.count,
+        guard index >= -1, index < bitrateLadder.count,
               index != selectedBitrateRungIndex
         else {
             return
@@ -347,7 +353,7 @@ public class VideoPlayer: Sendable {
     /// - Parameters:
     ///   - index: the index of the audio option, -1 for default.
     public func openAudioOption(index: Int = -1) {
-        guard index < audioOptions.count,
+        guard index >= -1, index < audioOptions.count,
               index != selectedAudioIndex
         else {
             return
@@ -361,13 +367,15 @@ public class VideoPlayer: Sendable {
     ///
     /// If playback has reached the end of the video (`hasReachedEnd` is true), play from the beginning.
     public func play() {
+        guard error == nil else { return }
         if hasReachedEnd {
             renderer?.flush()
+            let generation = itemGeneration
             player.seek(to: CMTime.zero) { [weak self] finished in
-                guard finished else {
-                    return
+                Task { @MainActor in
+                    guard let self, finished, self.itemGeneration == generation else { return }
+                    self.renderer?.flush()
                 }
-                self?.renderer?.flush()
             }
         }
         player.play()
@@ -393,13 +401,15 @@ public class VideoPlayer: Sendable {
     public func seek(to time: CMTime,
                      toleranceBefore: CMTime = CMTime.positiveInfinity,
                      toleranceAfter: CMTime = CMTime.positiveInfinity) {
+        guard time.seconds.isFinite else { return }
         renderer?.flush()
         hasReachedEnd = false
+        let generation = itemGeneration
         player.seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter) { [weak self] finished in
-            guard finished else {
-                return
+            Task { @MainActor in
+                guard let self, finished, self.itemGeneration == generation else { return }
+                self.renderer?.flush()
             }
-            self?.renderer?.flush()
         }
         restartControlPanelTask()
     }
@@ -442,6 +452,8 @@ public class VideoPlayer: Sendable {
     
     /// Stop media playback and unload the current media.
     public func stop() {
+        itemGeneration = UUID()
+        cancelControlPanelTask()
         tearDownObservers()
         tearDownInjector()
         player.replaceCurrentItem(with: nil)
@@ -450,8 +462,13 @@ public class VideoPlayer: Sendable {
         duration = 0
         currentTime = 0
         bitrate = 0
+        url = nil; metadata = [:]; error = nil; loading = false; buffering = false
+        paused = true; hasReachedEnd = false; scrubState = .notScrubbing
+        bitrateLadder = []; audioOptions = []; selectedAudioIndex = -1; selectedBitrateRungIndex = -1
+        aspectRatio = nil; playlistReader = nil; delegate = nil
+        shouldShowPlaybackOptions = false
     }
-    
+
     //MARK: Private methods
     /// Callback for the end of playback. Reveals the control panel if it was hidden.
     @objc private func onPlayReachedEnd() {
@@ -497,7 +514,7 @@ public class VideoPlayer: Sendable {
         
         let itemTime = videoOutput.itemTime(forHostTime: link.targetTimestamp)
         do {
-            let result = try injector.processFrame(
+            _ = try injector.processFrame(
                 videoOutput: videoOutput,
                 at: itemTime
             )
@@ -521,84 +538,56 @@ public class VideoPlayer: Sendable {
     
     /// Set up observers to register current media duration, current playback time, current bitrate, playback end event.
     private func setupObservers() {
+        let generation = itemGeneration
         if timeObserver == nil {
             let interval = CMTime(seconds: 0.005, preferredTimescale: 1000)
-            timeObserver = player.addPeriodicTimeObserver(
-                forInterval: interval,
-                queue: .main
-            ) { [weak self] time in
-                guard let self else { return }
-                
-                let event = self.player.currentItem?.accessLog()?.events.last
-                // Average bitrate is supposed to be the most representative value
-                // but some HLS manifests only advertise bitrate.
-                if let event, event.indicatedAverageBitrate > 0 {
-                    self.bitrate = event.indicatedAverageBitrate
-                } else if let event, event.indicatedBitrate > 0 {
-                    self.bitrate = event.indicatedBitrate
-                } else {
-                    self.bitrate = 0
-                }
-                
-                switch self.scrubState {
-                case .notScrubbing:
-                    self.currentTime = time.seconds
-                    break
-                case .scrubStarted: return
-                case .scrubEnded: return
+            timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+                Task { @MainActor in
+                    guard let self, self.itemGeneration == generation else { return }
+                    let event = self.player.currentItem?.accessLog()?.events.last
+                    if let event, event.indicatedAverageBitrate > 0 {
+                        self.bitrate = event.indicatedAverageBitrate
+                    } else if let event, event.indicatedBitrate > 0 {
+                        self.bitrate = event.indicatedBitrate
+                    } else {
+                        self.bitrate = 0
+                    }
+                    if case .notScrubbing = self.scrubState { self.currentTime = time.seconds }
                 }
             }
         }
-        
         if durationObserver == nil, let currentItem = player.currentItem {
-            durationObserver = currentItem.observe(
-                \.duration,
-                 options: [.new, .initial]
-            ) { [weak self] item, _ in
-                let duration = CMTimeGetSeconds(item.duration)
-                if !duration.isNaN {
-                    self?.duration = duration
+            durationObserver = currentItem.observe(\.duration, options: [.new, .initial]) { [weak self] item, _ in
+                let duration = item.duration.seconds
+                Task { @MainActor in
+                    guard let self, self.itemGeneration == generation, self.player.currentItem === item else { return }
+                    if duration.isFinite { self.duration = duration }
                 }
             }
         }
-        
         if mediaStatusObserver == nil, let currentItem = player.currentItem {
-            mediaStatusObserver = currentItem.observe(
-                \.status,
-                 options: [.new, .initial]
-            ) { [weak self] item, _ in
-                self?.loading = item.status == .unknown
-                if item.status == .failed, let error = item.error {
-                    print("Error: failed to load media: \(error.localizedDescription)")
-                    self?.error = error
-                } else {
-                    self?.error = nil
+            mediaStatusObserver = currentItem.observe(\.status, options: [.new, .initial]) { [weak self] item, _ in
+                Task { @MainActor in
+                    guard let self, self.itemGeneration == generation, self.player.currentItem === item else { return }
+                    self.loading = item.status == .unknown
+                    self.error = item.status == .failed ? item.error : nil
                 }
             }
         }
-        
         if bufferingObserver == nil {
-            bufferingObserver = player.observe(
-                \.timeControlStatus,
-                 options: [.new, .old, .initial]
-            ) { [weak self] player, status in
-                self?.buffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
-                // buffering doesn't bring up the control panel but prevents auto dismiss.
-                // auto dismiss after play resumed.
-                if (status.oldValue, status.newValue) == (.waitingToPlayAtSpecifiedRate, .playing) {
-                    self?.restartControlPanelTask()
+            bufferingObserver = player.observe(\.timeControlStatus, options: [.new, .old, .initial]) { [weak self] player, status in
+                let resumed = (status.oldValue, status.newValue) == (.waitingToPlayAtSpecifiedRate, .playing)
+                Task { @MainActor in
+                    guard let self, self.itemGeneration == generation else { return }
+                    self.buffering = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
+                    if resumed { self.restartControlPanelTask() }
                 }
             }
         }
-        
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(onPlayReachedEnd),
-            name: AVPlayerItem.didPlayToEndTimeNotification,
-            object: player.currentItem
-        )
+        NotificationCenter.default.addObserver(self, selector: #selector(onPlayReachedEnd),
+            name: AVPlayerItem.didPlayToEndTimeNotification, object: player.currentItem)
     }
-    
+
     /// Tear down observers set up in `setupObservers()`.
     private func tearDownObservers() {
         if let timeObserver {

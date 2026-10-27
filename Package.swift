@@ -19,10 +19,10 @@ let package = Package(
         .target(
             name: "OpenImmersive",
             swiftSettings: [
-                .defaultIsolation(MainActor.self)
+                .swiftLanguageMode(.v6), .defaultIsolation(MainActor.self)
             ]
         ),
         .testTarget(name: "OpenImmersiveTests", dependencies: ["OpenImmersive"],
-                    swiftSettings: [.defaultIsolation(MainActor.self)]),
+                    swiftSettings: [.swiftLanguageMode(.v6), .defaultIsolation(MainActor.self)]),
     ]
 )

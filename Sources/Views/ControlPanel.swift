@@ -340,7 +340,7 @@ public struct Scrubber: View {
     }
     
     public var body: some View {
-        Slider(value: $videoPlayer.currentTime, in: 0...videoPlayer.duration) { scrubbing in
+        Slider(value: $videoPlayer.currentTime, in: 0...max(1, videoPlayer.duration)) { scrubbing in
             if scrubbing {
                 videoPlayer.scrubState = .scrubStarted
             } else {
