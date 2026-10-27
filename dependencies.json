@@ -1,0 +1,13 @@
+{
+  "edge264-mvc": {
+    "repository": "jens-duttke/edge264-mvc",
+    "revision": "4555276ce692ee8abdb8f768d4e59f82b1f6590e",
+    "sha256": "fb0be4f9bb40f0598cfbd3aabc9faf352a5a59789ba8dbf20f40008b40b92f7d"
+  },
+  "ffmpeg": {
+    "repository": "FFmpeg/FFmpeg",
+    "revision": "894da5ca7d742e4429ffb2af534fcda0103ef593",
+    "release": "8.0.1",
+    "sha256": "9dad3557314f1b7923b61aff15e30079e964c3b41276bbd43dd8bb15b8028b5f"
+  }
+}
