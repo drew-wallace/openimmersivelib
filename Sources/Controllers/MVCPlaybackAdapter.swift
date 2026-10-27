@@ -1,6 +1,8 @@
 import AVFoundation
 import MVCCore
 
+public typealias EmbeddedAudioTrack = MVCCore.AudioTrack
+
 /// Internal boundary also used by deterministic controller tests.
 protocol MVCPlaybackControlling: AnyObject {
     var videoRenderer: AVSampleBufferVideoRenderer { get }

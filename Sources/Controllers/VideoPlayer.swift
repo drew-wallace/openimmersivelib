@@ -23,6 +23,9 @@ public class VideoPlayer: Sendable {
         mvc?.videoRenderer ?? injector?.renderer
     }
     
+    private(set) public var embeddedAudioTracks: [EmbeddedAudioTrack] = []
+    private(set) public var selectedEmbeddedAudioTrackID = -1
+    private(set) public var eyesSwapped = false
     public var isMVC: Bool { mvc != nil }
 
     //MARK: Variables accessible to the UI
@@ -85,7 +88,7 @@ public class VideoPlayer: Sendable {
     }
     /// `true` if the HLS stream has at least 2 audio options and the custom configuration doesn't prevent user selection.
     public var canChooseAudio: Bool {
-        audioOptions.count > 1 && Config.shared.controlPanelShowAudioOptions
+        (audioOptions.count > 1 || embeddedAudioTracks.count > 1) && Config.shared.controlPanelShowAudioOptions
     }
     /// The current volume of the underlying `AVPlayer`.
     public var volume: Float {
@@ -209,7 +212,7 @@ public class VideoPlayer: Sendable {
     ///
     /// This will only do something if resolution or audio options are available.
     public func togglePlaybackOptions() {
-        if canChooseResolution || canChooseAudio {
+        if canChooseResolution || canChooseAudio || isMVC {
             withAnimation {
                 shouldShowPlaybackOptions.toggle()
             }
@@ -552,8 +555,17 @@ public class VideoPlayer: Sendable {
         bitrateLadder = []; audioOptions = []; selectedAudioIndex = -1; selectedBitrateRungIndex = -1
         aspectRatio = nil; playlistReader = nil; delegate = nil
         shouldShowPlaybackOptions = false
+        embeddedAudioTracks = []; selectedEmbeddedAudioTrackID = -1; eyesSwapped = false
         fileAccess = nil
     }
+
+    public func selectEmbeddedAudioTrack(id: Int) {
+        guard embeddedAudioTracks.contains(where: { $0.id == id }) else { return }
+        mvc?.selectAudio(id)
+        restartControlPanelTask()
+    }
+
+    public func swapEyes() { mvc?.swapEyes(); restartControlPanelTask() }
 
     private func openMVC(_ item: VideoItem, generation: UUID) {
         guard projection == .rectangular, framePacking == .none else {
@@ -584,6 +596,9 @@ public class VideoPlayer: Sendable {
         hasReachedEnd = backend.state == .ended
         error = backend.error.map { MVCFailure($0) }
         duration = backend.media?.duration ?? 0
+        embeddedAudioTracks = backend.media?.audioTracks ?? []
+        selectedEmbeddedAudioTrackID = backend.selectedAudio
+        eyesSwapped = backend.eyesSwapped
         if case .notScrubbing = scrubState { currentTime = backend.position }
         if hasReachedEnd && !endedBefore { onPlayReachedEnd() }
     }
