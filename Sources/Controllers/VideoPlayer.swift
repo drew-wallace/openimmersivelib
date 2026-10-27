@@ -157,6 +157,7 @@ public class VideoPlayer: Sendable {
     private var itemGeneration = UUID()
     @ObservationIgnored private let acquireFileAccess: (URL) -> SecurityScopedResource?
     @ObservationIgnored private let prepareItem: (VideoItem) async -> VideoItem
+    @ObservationIgnored private let configureAudio: (AVAudioSession.SoundStageSize) -> Void
     private var fileAccess: SecurityScopedResource?
     private var openingTask: Task<Void, Never>?
     private var playbackRequestedDuringPreparation = false
@@ -168,11 +169,12 @@ public class VideoPlayer: Sendable {
 
     init(makeMVC: @escaping () -> any MVCPlaybackControlling = { MVCPlaybackAdapter() },
          acquireFileAccess: @escaping (URL) -> SecurityScopedResource? = { SecurityScopedResource($0) },
-         prepareItem: @escaping (VideoItem) async -> VideoItem = { await $0.preparedForPlayback() }) {
+         prepareItem: @escaping (VideoItem) async -> VideoItem = { await $0.preparedForPlayback() },
+         configureAudio: @escaping (AVAudioSession.SoundStageSize) -> Void = { VideoPlayer.applyAudioConfiguration(soundStageSize: $0) }) {
         self.makeMVC = makeMVC
         self.acquireFileAccess = acquireFileAccess
         self.prepareItem = prepareItem
-        configureAudio()
+        self.configureAudio = configureAudio
     }
 
     isolated deinit { stop() }
@@ -216,7 +218,7 @@ public class VideoPlayer: Sendable {
     }
     
     /// Configures the audio session for video playback.
-    private func configureAudio() {
+    private static func applyAudioConfiguration(soundStageSize: AVAudioSession.SoundStageSize) {
         do {
             // Configure the audio session for playback. Set the `moviePlayback` mode
             // to reduce the audio's dynamic range to help normalize audio levels.
@@ -224,7 +226,7 @@ public class VideoPlayer: Sendable {
             try session.setCategory(.playback, mode: .moviePlayback, policy: .longFormVideo)
             try session.setSupportsMultichannelContent(true)
             try session.setIntendedSpatialExperience(
-                .headTracked(soundStageSize: .automatic, anchoringStrategy: .automatic)
+                .headTracked(soundStageSize: soundStageSize, anchoringStrategy: .automatic)
             )
         } catch {
             print("Error: failed to configure audio session: \(error.localizedDescription)")
@@ -273,6 +275,7 @@ public class VideoPlayer: Sendable {
             return
         }
 
+        configureAudio(.automatic)
         guard let playerItem = makePlayerItem(item.url) else {
             return
         }
@@ -561,6 +564,7 @@ public class VideoPlayer: Sendable {
             error = MVCFailure("MVC playback requires a local file or a seekable HTTP(S) URL.")
             return
         }
+        configureAudio(.large)
         let backend = makeMVC()
         mvc = backend
         backend.volume = player.volume

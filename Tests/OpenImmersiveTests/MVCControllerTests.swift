@@ -40,6 +40,24 @@ final class FakeMVC: MVCPlaybackControlling {
 
 @Suite @MainActor
 struct MVCControllerTests {
+    @Test func nativePlaybackUsesLargeSoundStageAndRestoresExistingAudioSettings() throws {
+        let backend = FakeMVC()
+        var stages: [AVAudioSession.SoundStageSize] = []
+        let player = VideoPlayer(makeMVC: { backend }, configureAudio: { stages.append($0) })
+        defer { player.stop() }
+        player.openItem(item())
+        #expect(stages == [.large])
+
+        // SwiftUI may construct another controller while the active one plays.
+        // Creating an idle controller must not shrink the active sound stage.
+        let idlePlayer = VideoPlayer(makeMVC: { FakeMVC() }, configureAudio: { stages.append($0) })
+        #expect(stages == [.large])
+        idlePlayer.stop()
+
+        player.openItem(VideoItem(metadata: [:], url: URL(fileURLWithPath: "/tmp/spatial.mov")))
+        #expect(stages == [.large, .automatic])
+    }
+
     private func item(_ path: String = "movie.mkv", engine: VideoItem.PlaybackEngine = .automatic,
                       projection: VideoItem.Projection? = nil,
                       packing: VideoItem.FramePacking = .none) -> VideoItem {
