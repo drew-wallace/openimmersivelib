@@ -22,6 +22,7 @@ let package = Package(
                 .defaultIsolation(MainActor.self)
             ]
         ),
-
+        .testTarget(name: "OpenImmersiveTests", dependencies: ["OpenImmersive"],
+                    swiftSettings: [.defaultIsolation(MainActor.self)]),
     ]
 )
