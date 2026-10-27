@@ -23,8 +23,22 @@ Apple Silicon Mac, visionOS 27 simulator. Run dates: October 26, 2026.
   HTTP reports are in Reports/simulator-http-run-{1,2}.json (counters are cumulative
   after replay). A temporary app copy supplied the test URL/fixture and collected
   diagnostics; those test hooks are not part of the app PR.
-- Signed device app build passes. Physical installation is blocked by the paired
-  M5 headset being locked; no integrated-player hardware result is claimed.
+- Physical M5 smoke test passes on `RealityDevice17,1`, visionOS 27.2 (24N120),
+  using the Release app built from library revision
+  `339fa3eda223360b6b979a5be4a09758f989e4a5`. Both bundled local and extensionless
+  HTTP playback reach EOF and replay through the app's RealityView. Each pass
+  submits all nine stereo pairs and six-channel PCM; both transports report zero
+  renderer errors, late drops, concealed pairs, rebuffer events and audio timing
+  gaps, with nominal thermal state. Raw reports are in
+  `Reports/m5-{local,http}-run-{1,2}.json`; counters are cumulative after replay.
+  The initial HTTP attempt returned the OS's offline error; reopening the app
+  succeeded. Automatic retry after network-permission/connectivity errors is not
+  implemented.
+
+The physical smoke fixture is only 0.375 seconds at 640×480 per eye and contains
+six-channel PCM silence. It verifies native integration, renderer submission and
+EOF/replay, not sustained 1080p movie throughput, audible channel routing or
+physical eye orientation. Test hooks remain in the temporary app copy only.
 
 The simulator's test runner has no compositor surface; the real-decoder test checks
 sample production rather than claiming paced EOF or physical presentation.

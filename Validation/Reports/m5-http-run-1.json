@@ -1,0 +1,50 @@
+{
+  "audioTimingGaps" : 0,
+  "bufferEvents" : 0,
+  "concealedPairs" : 0,
+  "createdAt" : "2026-10-27T00:14:31Z",
+  "decodeAndCopySeconds" : 0.025700583334582916,
+  "decodeWallSeconds" : 1.9098617083336649,
+  "decodedPairs" : 9,
+  "dependencies" : "FFmpeg 62.3.100; edge264-mvc 2.0",
+  "droppedPairs" : 0,
+  "environment" : "visionOS device",
+  "hardware" : "RealityDevice17,1",
+  "maxAudioTimingGapMicroseconds" : 0.6666666666860692,
+  "media" : {
+    "audioTracks" : [
+      {
+        "channels" : 6,
+        "codec" : "pcm_s16le",
+        "id" : 1,
+        "language" : "eng",
+        "sampleRate" : 48000,
+        "title" : ""
+      }
+    ],
+    "baseIsRight" : false,
+    "colorMatrix" : 2,
+    "colorPrimaries" : 2,
+    "colorTransfer" : 2,
+    "duration" : 0.375,
+    "fps" : 24,
+    "fullRange" : false,
+    "height" : 480,
+    "sampleAspectRatio" : 1,
+    "width" : 640
+  },
+  "platform" : "Version 27.2 (Build 24N120)",
+  "playbackPositionSeconds" : 0.376011084,
+  "playbackState" : "ended",
+  "presentedPairs" : 9,
+  "renderedAudioChannels" : 6,
+  "rendererErrors" : [
+
+  ],
+  "schemaVersion" : 1,
+  "stereoConfirmed" : true,
+  "thermalState" : "nominal",
+  "transport" : "HTTP",
+  "validationNote" : "Decoded\/presented counters do not measure compositor drops or acoustic A\/V sync. Hardware acceptance requires the documented external tests.",
+  "workerThreads" : 4
+}
