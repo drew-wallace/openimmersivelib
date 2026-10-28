@@ -6,9 +6,18 @@
 //
 
 import AVFoundation
+import MediaTransport
 
 /// Simple structure describing a video.
 public struct VideoItem: Codable {
+    nonisolated public enum PlaybackEngine: String, Codable, Hashable, Sendable {
+        /// MKV/MK3D use MVC; other URLs retain AVFoundation playback.
+        case automatic
+        case avFoundation
+        /// Also use for extensionless, seekable HTTP MVC resources.
+        case mvc
+    }
+
     nonisolated
     public enum Projection: Codable, Hashable {
         /// Spherical projection of an equirectangular (or half equirectangular) frame. Use this for mono or MV-HEVC stereo VR180 & VR360 video.
@@ -46,19 +55,59 @@ public struct VideoItem: Codable {
     public var projection: Projection?
     /// The frame packing type of the media (default to .none).
     public var framePacking: FramePacking
+    public var playbackEngine: PlaybackEngine
+
+    /// Resolves engine selection without network requests or AVAsset probing.
+    public var usesMVC: Bool {
+        playbackEngine == .mvc || (playbackEngine == .automatic &&
+            ["mkv", "mk3d"].contains(url.pathExtension.lowercased()))
+    }
+
     
+    /// Unknown remote resource names can be resolved without asking the user for a decoder.
+    var needsContainerProbe: Bool {
+        playbackEngine == .automatic && ["http", "https"].contains(url.scheme?.lowercased() ?? "") &&
+        !["mkv", "mk3d", "m3u", "m3u8", "mp4", "mov", "m4v", "aivu", "ts"].contains(url.pathExtension.lowercased())
+    }
+
+    /// Preserves explicit format choices and infers a rectangular screen for Matroska resources.
+    public func preparedForPlayback() async -> VideoItem {
+        guard needsContainerProbe else { return self }
+        do {
+            guard try await HTTPByteSource.isMatroska(url) else { return self }
+            var item = self
+            item.playbackEngine = .mvc
+            if item.projection == nil { item.projection = .rectangular }
+            return item
+        } catch { return self }
+    }
+
     /// Public initializer for visibility.
     /// - Parameters:
     ///   - metadata: dictionary of metadata values for the video. `commonIdentifierTitle` and `commonIdentifierDescription` are expected.
     ///   - url: URL to a media, whether local or streamed from a HLS server (m3u8).
     ///   - projection: the projection type of the media (default nil).
     ///   - framePacking: the frame packing type of the media (default .none)
-    public init(metadata: [AVMetadataIdentifier: String], url: URL, projection: Projection? = nil, framePacking: FramePacking = .none) {
+    public init(metadata: [AVMetadataIdentifier: String], url: URL, projection: Projection? = nil, framePacking: FramePacking = .none, playbackEngine: PlaybackEngine = .automatic) {
         self.metadata = metadata
         self.url = url
         self.projection = projection
         self.framePacking = framePacking
+        self.playbackEngine = playbackEngine
     }
+    private enum CodingKeys: String, CodingKey {
+        case metadata, url, projection, framePacking, playbackEngine
+    }
+
+    public init(from decoder: Decoder) throws {
+        let values = try decoder.container(keyedBy: CodingKeys.self)
+        metadata = try values.decode([AVMetadataIdentifier: String].self, forKey: .metadata)
+        url = try values.decode(URL.self, forKey: .url)
+        projection = try values.decodeIfPresent(Projection.self, forKey: .projection)
+        framePacking = try values.decodeIfPresent(FramePacking.self, forKey: .framePacking) ?? .none
+        playbackEngine = try values.decodeIfPresent(PlaybackEngine.self, forKey: .playbackEngine) ?? .automatic
+    }
+
 }
 
 extension VideoItem: Identifiable {

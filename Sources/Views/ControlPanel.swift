@@ -115,7 +115,7 @@ public struct MediaInfo: View {
             .padding(.horizontal, 45)
             .truncationMode(.tail)
             
-            if videoPlayer.canChooseResolution || videoPlayer.canChooseAudio {
+            if videoPlayer.canChooseResolution || videoPlayer.canChooseAudio || videoPlayer.isMVC {
                 ResolutionToggle(videoPlayer: $videoPlayer)
             }
         }
@@ -340,7 +340,7 @@ public struct Scrubber: View {
     }
     
     public var body: some View {
-        Slider(value: $videoPlayer.currentTime, in: 0...videoPlayer.duration) { scrubbing in
+        Slider(value: $videoPlayer.currentTime, in: 0...max(1, videoPlayer.duration)) { scrubbing in
             if scrubbing {
                 videoPlayer.scrubState = .scrubStarted
             } else {
@@ -411,7 +411,7 @@ public struct VariantSelector: View {
     
     public var body: some View {
         VStack(alignment: .trailing) {
-            if videoPlayer.canChooseAudio {
+            if videoPlayer.canChooseAudio && !videoPlayer.audioOptions.isEmpty {
                 let options = videoPlayer.audioOptions
                 let zippedOptions = Array(zip(options.indices, options))
                 let isOn: (Int) -> Binding<Bool> = { index in
@@ -448,6 +448,26 @@ public struct VariantSelector: View {
                 }
             }
             
+            if videoPlayer.canChooseAudio && !videoPlayer.embeddedAudioTracks.isEmpty {
+                Picker("Audio track", selection: Binding(
+                    get: { videoPlayer.selectedEmbeddedAudioTrackID },
+                    set: { videoPlayer.selectEmbeddedAudioTrack(id: $0) }
+                )) {
+                    ForEach(videoPlayer.embeddedAudioTracks) { track in
+                        Text(track.label).tag(track.id)
+                    }
+                }
+                .frame(maxWidth: 600)
+            }
+
+            if videoPlayer.isMVC {
+                Button(videoPlayer.eyesSwapped ? "Restore eye order" : "Swap eyes",
+                       systemImage: "arrow.left.arrow.right") {
+                    videoPlayer.swapEyes()
+                }
+                .disabled(videoPlayer.loading || videoPlayer.error != nil)
+            }
+
             if videoPlayer.canChooseResolution {
                 let options = videoPlayer.bitrateLadder
                 let zippedOptions = Array(zip(options.indices, options))

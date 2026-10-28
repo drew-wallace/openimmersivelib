@@ -6,3 +6,11 @@ DerivedData/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
+
+# Native build inputs and outputs
+Artifacts/
+Vendor/
+DerivedData*/
+*.mkv
+*.mk3d
+.build/

@@ -154,6 +154,11 @@ public struct ImmersivePlayer: View {
             videoPlayer.play()
             videoScreen.update(source: videoPlayer)
         }
+        .onChange(of: videoPlayer.renderer) { _, _ in
+            // MVC uses a native rectangular component. Leave the existing sphere's
+            // one-shot aspect observation alone for frame-packed AVPlayer content.
+            if videoPlayer.isMVC { videoScreen.update(source: videoPlayer) }
+        }
         .onDisappear {
             videoPlayer.stop()
             videoPlayer.hideControlPanel()

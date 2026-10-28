@@ -29,23 +29,14 @@ public struct FilePicker: View {
         }
         .fileImporter(
             isPresented: $isFileImporterShowing,
-            allowedContentTypes: [.audiovisualContent, UTType(filenameExtension: "aivu")!]
+            allowedContentTypes: [.audiovisualContent, UTType(filenameExtension: "aivu")!,
+                                  UTType(filenameExtension: "mkv") ?? .data,
+                                  UTType(filenameExtension: "mk3d") ?? .data]
         ) { result in
             switch result {
             case .success(let url):
-                // Hack: this should be mirrored by url.stopAccessingSecurityScopedResource(),
-                // but it would prevent playing the same file twice.
-                url.startAccessingSecurityScopedResource()
-                
-                let isAivuFile = url.lastPathComponent.hasSuffix(".aivu")
-                let item = VideoItem(
-                    metadata: [
-                        .commonIdentifierTitle: url.lastPathComponent,
-                        .commonIdentifierDescription: "From Local Files",
-                    ],
-                    url: url,
-                    projection: isAivuFile ? .appleImmersive : nil
-                )
+                // The player owns access for the playback lifetime.
+                let item = VideoItem.selectedFile(url, description: "From Local Files")
                 loadItemAction(item)
                 break
                 

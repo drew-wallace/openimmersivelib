@@ -7,9 +7,11 @@
 
 import SwiftUI
 
-/// A button revealing a sheet with a `TextField` and a clipboard paste button for manual input of HLS stream URLs.
+/// A button revealing a sheet with a `TextField` and a clipboard paste button for manual input of video URLs.
 public struct StreamUrlInput: View {
     /// The visibility of the sheet.
+    @State private var preparation: Task<Void, Never>?
+    @State private var loading = false
     @State private var isSheetShowing: Bool = false
     /// The current value of the text field.
     @State private var textfieldRawVal: String = ""
@@ -25,7 +27,7 @@ public struct StreamUrlInput: View {
     /// The URL verification is very lenient and will mostly catch obvious accidental inputs.
     @State private var isUrlValid: Bool = false
     
-    /// The callback to execute after a valid HLS stream URL has been submitted.
+    /// The callback to execute after a valid video URL has been submitted.
     var loadItemAction: VideoItemAction
     
     /// Public initializer for visibility.
@@ -50,7 +52,7 @@ public struct StreamUrlInput: View {
                     }
                     .buttonBorderShape(.circle)
                     
-                    Text("Enter or paste a HLS stream URL (.m3u/.m3u8)")
+                    Text("Enter or paste a video URL")
                         .font(.headline)
                         .padding()
                     
@@ -81,13 +83,13 @@ public struct StreamUrlInput: View {
                 HStack {
                     Button("Load Stream", systemImage: "play.rectangle.fill") {
                         loadStream()
-                        isSheetShowing = false
                     }
-                    .disabled(!isUrlValid)
+                    .disabled(!isUrlValid || loading)
                 }
                 .padding()
             }
             .padding()
+            .onDisappear { preparation?.cancel(); preparation = nil; loading = false }
             .interactiveDismissDisabled()
             .presentationBackground(.clear)
             .onChange(of: textfieldVal) { _, _ in
@@ -104,30 +106,25 @@ public struct StreamUrlInput: View {
     /// It checks that a `URL` object can be built from the text field string value,
     /// then checks that the resulting object has a host, which implicitly checks for scheme, domain, and basic syntax.
     private func validateUrl() -> URL? {
-        guard let url = URL(string: textfieldVal),
-              url.host() != nil else {
-            return nil
-        }
-        
-        return url
+        VideoItem.streamURL(from: textfieldVal)
     }
-    
-    /// Loads the HLS stream for playback.
+
+    /// Prepares the selected resource for playback.
     private func loadStream() {
-        guard let url = validateUrl() else {
-            return
+        guard !loading, let url = validateUrl() else { return }
+        loading = true
+        preparation = Task {
+            var item = VideoItem(metadata: [.commonIdentifierTitle: url.lastPathComponent.isEmpty ? "Stream" : url.lastPathComponent,
+                                            .commonIdentifierDescription: url.absoluteString], url: url)
+            if item.usesMVC { item.projection = .rectangular }
+            item = await item.preparedForPlayback()
+            guard !Task.isCancelled else { return }
+            loadItemAction(item)
+            loading = false
+            isSheetShowing = false
         }
-        
-        let item = VideoItem(
-            metadata: [
-                .commonIdentifierTitle: "HLS Stream",
-                .commonIdentifierDescription: url.absoluteString,
-            ],
-            url: url
-        )
-        
-        loadItemAction(item)
     }
+
 }
 
 #Preview {
